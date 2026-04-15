@@ -2,7 +2,7 @@ ARG EMSDK_VERSION=2.0.34
 
 FROM emscripten/emsdk:${EMSDK_VERSION}
 
-ARG DEFAULT_CFLAGS="-O3 -flto"
+ARG DEFAULT_CFLAGS="-O3 -flto -msimd128"
 ARG DEFAULT_CXX_FLAGS="-std=c++17"
 ARG DEFAULT_EMSCRIPTEN_SETTINGS="\
 -s PTHREAD_POOL_SIZE=navigator.hardwareConcurrency \
