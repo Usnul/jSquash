@@ -17,6 +17,11 @@ export interface EncodeOptions {
   enableSharpYUV: boolean;
   tune: AVIFTune;
   bitDepth: number;
+  colorPrimaries: number;
+  transferCharacteristics: number;
+  matrixCoefficients: number;
+  clli_maxCLL: number;
+  clli_maxPALL: number;
 }
 
 export interface AVIFModule extends EmscriptenWasm.Module {

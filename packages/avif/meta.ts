@@ -1,21 +1,34 @@
-/**
- * Copyright 2020 Google Inc. All Rights Reserved.
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *     http://www.apache.org/licenses/LICENSE-2.0
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 import {
   EncodeOptions as RawEncodeOptions,
   AVIFTune,
 } from './codec/enc/avif_enc.js';
 
 export { AVIFTune };
+
+/** ITU-T H.273 Color Primaries (subset of common values) */
+export const enum AVIFColorPrimaries {
+  UNSPECIFIED = 0,
+  BT709 = 1,       // sRGB / Rec.709
+  BT2020 = 9,      // HDR / Wide Color Gamut
+  P3 = 12,         // Display P3
+}
+
+/** ITU-T H.273 Transfer Characteristics (subset of common values) */
+export const enum AVIFTransferCharacteristics {
+  UNSPECIFIED = 0,
+  BT709 = 1,       // Rec.709
+  SRGB = 13,       // sRGB EOTF
+  PQ = 16,         // SMPTE ST 2084 (Perceptual Quantizer) - HDR10
+  HLG = 18,        // Hybrid Log-Gamma - HLG HDR
+}
+
+/** ITU-T H.273 Matrix Coefficients (subset of common values) */
+export const enum AVIFMatrixCoefficients {
+  IDENTITY = 0,    // RGB / lossless
+  BT709 = 1,       // Rec.709
+  BT601 = 6,       // BT.601 (current default for lossy)
+  BT2020_NCL = 9,  // BT.2020 non-constant luminance
+}
 
 export type EncodeOptions = RawEncodeOptions & {
   lossless: boolean;
@@ -44,4 +57,10 @@ export const defaultOptions: EncodeOptions = {
   enableSharpYUV: false,
   bitDepth: 8,
   lossless: false,
+  colorPrimaries: 0,          // 0 = use libavif default / unspecified
+  transferCharacteristics: 0, // 0 = use libavif default / unspecified
+  matrixCoefficients: 0,      // 0 = use legacy behavior (BT601 lossy / Identity lossless)
+  clli_maxCLL: 0,             // 0 = unset
+  clli_maxPALL: 0,            // 0 = unset
 };
+

@@ -51,6 +51,15 @@ struct AvifOptions {
   bool enableSharpYUV;
   // 8, 10, or 12 bit depth
   int bitDepth;
+  // CICP color metadata (ITU-T H.273 / ISO 23091-2)
+  // 0 = unspecified (use legacy default behavior)
+  int colorPrimaries;          // e.g. 1=BT.709, 9=BT.2020, 12=P3
+  int transferCharacteristics; // e.g. 13=sRGB, 16=PQ/ST2084, 18=HLG
+  int matrixCoefficients;      // e.g. 0=Identity, 1=BT.709, 6=BT.601, 9=BT.2020_NCL
+  // Content Light Level Information (for PQ HDR)
+  // 0 = unset
+  int clli_maxCLL;   // Maximum Content Light Level (nits)
+  int clli_maxPALL;  // Maximum Picture Average Light Level (nits)
 };
 
 thread_local const val Uint8Array = val::global("Uint8Array");
@@ -90,10 +99,25 @@ val encode(std::string buffer, int width, int height, AvifOptions options) {
   AvifImagePtr image(avifImageCreate(width, height, depth, format), avifImageDestroy);
   RETURN_NULL_IF(image == nullptr);
 
-  if (lossless) {
+  // Set CICP color metadata
+  if (options.colorPrimaries != 0) {
+    image->colorPrimaries = static_cast<avifColorPrimaries>(options.colorPrimaries);
+  }
+  if (options.transferCharacteristics != 0) {
+    image->transferCharacteristics = static_cast<avifTransferCharacteristics>(options.transferCharacteristics);
+  }
+  if (options.matrixCoefficients != 0) {
+    image->matrixCoefficients = static_cast<avifMatrixCoefficients>(options.matrixCoefficients);
+  } else if (lossless) {
     image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_IDENTITY;
   } else {
     image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
+  }
+
+  // Set Content Light Level Information (CLLI)
+  if (options.clli_maxCLL != 0 || options.clli_maxPALL != 0) {
+    image->clli.maxCLL = static_cast<uint16_t>(options.clli_maxCLL);
+    image->clli.maxPALL = static_cast<uint16_t>(options.clli_maxPALL);
   }
 
   avifRGBImage srcRGB;
@@ -181,7 +205,12 @@ EMSCRIPTEN_BINDINGS(my_module) {
       .field("denoiseLevel", &AvifOptions::denoiseLevel)
       .field("subsample", &AvifOptions::subsample)
       .field("enableSharpYUV", &AvifOptions::enableSharpYUV)
-      .field("bitDepth", &AvifOptions::bitDepth);
+      .field("bitDepth", &AvifOptions::bitDepth)
+      .field("colorPrimaries", &AvifOptions::colorPrimaries)
+      .field("transferCharacteristics", &AvifOptions::transferCharacteristics)
+      .field("matrixCoefficients", &AvifOptions::matrixCoefficients)
+      .field("clli_maxCLL", &AvifOptions::clli_maxCLL)
+      .field("clli_maxPALL", &AvifOptions::clli_maxPALL);
 
   function("encode", &encode);
 }
