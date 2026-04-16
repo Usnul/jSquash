@@ -40,6 +40,9 @@ export type ImageData16bit = {
   height: number;
 };
 
+/** Result type when outputFloat16 is true — data contains IEEE 754 float16 bit patterns */
+export type { DecodeResult16 } from './codec/dec/avif_dec.js';
+
 export const label = 'AVIF';
 export const mimeType = 'image/avif';
 export const extension = 'avif';
