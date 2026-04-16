@@ -1,25 +1,21 @@
-# This is a helper Makefile for building LibAVIF + LibAOM with given params.
+# This is a helper Makefile for building LibAVIF with given params and linking
+# the final WASM module.
 #
 # Params that must be supplied by the caller:
-#   $(CODEC_DIR)
-#   $(LIBAOM_DIR)
-#   $(BUILD_DIR)
-#   $(OUT_JS)
-#   $(OUT_CPP)
-#   $(LIBAOM_FLAGS)
-#   $(LIBAVIF_FLAGS)
-#   $(ENVIRONMENT)
+#   $(CODEC_DIR)       - path to libavif source
+#   $(BUILD_DIR)       - build output root
+#   $(OUT_JS)          - output JS file (e.g. enc/avif_enc.js or dec/avif_dec.js)
+#   $(OUT_CPP)         - C++ wrapper source
+#   $(LIBAVIF_FLAGS)   - CMake flags for libavif (codec selection, etc.)
+#   $(ENVIRONMENT)     - emscripten environment targets
+#   $(AV1_CODEC_LIBS)  - pre-built codec .a file(s) to link with
 
-# $(OUT_JS) is something like "enc/avif_enc.js" or "enc/avif_enc_mt.js"
-# so $(OUT_BUILD_DIR) will be "node_modules/build/enc/avif_enc[_mt]"
+# $(OUT_JS) is something like "enc/avif_enc.js" or "dec/avif_dec.js"
+# so $(OUT_BUILD_DIR) will be "node_modules/build/enc/avif_enc" etc.
 OUT_BUILD_DIR := $(BUILD_DIR)/$(basename $(OUT_JS))
 
-# We're making libavif and libaom for every node_modules/[enc|dec]/
 CODEC_BUILD_DIR := $(OUT_BUILD_DIR)/libavif
 CODEC_OUT := $(CODEC_BUILD_DIR)/libavif.a
-
-LIBAOM_BUILD_DIR := $(OUT_BUILD_DIR)/libaom
-LIBAOM_OUT := $(LIBAOM_BUILD_DIR)/libaom.a
 
 OUT_WASM = $(OUT_JS:.js=.wasm)
 OUT_WORKER=$(OUT_JS:.js=.worker.js)
@@ -31,13 +27,13 @@ PRE_JS = pre.js
 all: $(OUT_JS)
 
 # Only add libsharpyuv as a dependency for encoders.
-# Yes, that if statement is true for encoders.
 ifneq (,$(findstring enc/, $(OUT_JS)))
 $(OUT_JS): $(LIBSHARPYUV)
 $(CODEC_OUT): $(LIBSHARPYUV)
 endif
 
-$(OUT_JS): $(OUT_CPP) $(LIBAOM_OUT) $(CODEC_OUT)
+# Link the final WASM module
+$(OUT_JS): $(OUT_CPP) $(AV1_CODEC_LIBS) $(CODEC_OUT)
 	$(CXX) \
 		-I $(CODEC_DIR)/include \
 		$(CXXFLAGS) \
@@ -57,14 +53,14 @@ $(OUT_JS): $(OUT_CPP) $(LIBAOM_OUT) $(CODEC_OUT)
 		-o $@ \
 		$+
 
-$(CODEC_OUT): $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_OUT)
+# Build libavif.
+# The caller controls which codecs are enabled via LIBAVIF_FLAGS:
+#   Encoder: -DAVIF_CODEC_AOM=LOCAL (finds pre-built libaom at ext/aom/build.libavif/)
+#   Decoder: -DAVIF_CODEC_DAV1D=LOCAL (finds pre-built dav1d at ext/dav1d/build/)
+$(CODEC_OUT): $(CODEC_DIR)/CMakeLists.txt $(AV1_CODEC_LIBS)
 	emcmake cmake \
-		-DCMAKE_LIBRARY_PATH=$(LIBSHARPYUV_BUILD_DIR) \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DBUILD_SHARED_LIBS=0 \
-		-DAVIF_CODEC_AOM=1 \
-		-DAOM_LIBRARY=$(LIBAOM_OUT) \
-		-DAOM_INCLUDE_DIR=$(LIBAOM_DIR) \
 		-DCMAKE_C_FLAGS="$(OUT_FLAGS) -msimd128" \
 		-DCMAKE_CXX_FLAGS="$(OUT_FLAGS) -msimd128" \
 		$(LIBAVIF_FLAGS) \
@@ -72,27 +68,6 @@ $(CODEC_OUT): $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_OUT)
 		$(CODEC_DIR) && \
 	$(MAKE) -C $(CODEC_BUILD_DIR)
 
-$(LIBAOM_OUT): $(LIBAOM_DIR)/CMakeLists.txt
-	emcmake cmake \
-		-DCMAKE_BUILD_TYPE=Release \
-		-DENABLE_CCACHE=0 \
-		-DAOM_TARGET_CPU=generic \
-		-DENABLE_DOCS=0 \
-		-DENABLE_TESTS=0 \
-		-DENABLE_EXAMPLES=0 \
-		-DENABLE_TOOLS=0 \
-		-DCONFIG_ACCOUNTING=1 \
-		-DCONFIG_INSPECTION=0 \
-		-DCONFIG_RUNTIME_CPU_DETECT=0 \
-		-DCONFIG_WEBM_IO=0 \
-		-DCMAKE_C_FLAGS="$(OUT_FLAGS) -msimd128" \
-		-DCMAKE_CXX_FLAGS="$(OUT_FLAGS) -msimd128" \
-		$(LIBAOM_FLAGS) \
-		-B $(LIBAOM_BUILD_DIR) \
-		$(LIBAOM_DIR) && \
-	$(MAKE) -C $(LIBAOM_BUILD_DIR)
-
 clean:
 	$(RM) $(OUT_JS) $(OUT_WASM) $(OUT_WORKER)
-	$(MAKE) -C $(CODEC_BUILD_DIR) clean
-	$(MAKE) -C $(LIBAOM_BUILD_DIR) clean
+	-$(MAKE) -C $(CODEC_BUILD_DIR) clean

@@ -1,14 +1,28 @@
 # using libavif from https://github.com/AOMediaCodec/libavif
-LIBAVIF_URL = https://github.com/AOMediaCodec/libavif/archive/refs/tags/v1.0.1.tar.gz
+LIBAVIF_URL = https://github.com/AOMediaCodec/libavif/archive/refs/tags/v1.2.1.tar.gz
 LIBAVIF_PACKAGE = node_modules/libavif.tar.gz
 
-# using libaom from https://aomedia.googlesource.com/aom
-LIBAOM_URL = https://aomedia.googlesource.com/aom/+archive/v3.7.0.tar.gz
+# using libaom from https://aomedia.googlesource.com/aom (encoder only)
+LIBAOM_URL = https://aomedia.googlesource.com/aom/+archive/v3.11.0.tar.gz
 LIBAOM_PACKAGE = node_modules/libaom.tar.gz
+
+# using dav1d from https://code.videolan.org/videolan/dav1d (decoder only)
+DAV1D_URL = https://code.videolan.org/videolan/dav1d/-/archive/1.5.1/dav1d-1.5.1.tar.gz
+DAV1D_PACKAGE = node_modules/dav1d.tar.gz
 
 export CODEC_DIR = node_modules/libavif
 export BUILD_DIR = node_modules/build
-export LIBAOM_DIR = node_modules/libaom
+
+# libaom source placed at ext/aom for LocalAom.cmake to find
+LIBAOM_SRC = $(CODEC_DIR)/ext/aom
+LIBAOM_BUILD = $(LIBAOM_SRC)/build.libavif
+LIBAOM_OUT = $(LIBAOM_BUILD)/libaom.a
+
+# dav1d source placed at ext/dav1d for LocalDav1d.cmake to find
+DAV1D_SRC = $(CODEC_DIR)/ext/dav1d
+DAV1D_BUILD = $(DAV1D_SRC)/build
+DAV1D_OUT = $(DAV1D_BUILD)/src/libdav1d.a
+EMSCRIPTEN_CROSS_FILE = $(DAV1D_SRC)/emscripten-cross.txt
 
 override CFLAGS += "-Wno-unused-macros"
 
@@ -34,8 +48,8 @@ HELPER_MAKEFLAGS := -f helper.Makefile
 
 all: $(OUT_ENC_JS) $(OUT_DEC_JS) $(OUT_ENC_MT_JS)
 
-# ST-Encoding
-$(OUT_ENC_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_ST)
+# ST-Encoding (uses libaom for encoding, no dav1d needed)
+$(OUT_ENC_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_OUT) $(LIBSHARPYUV_ST)
 	mkdir -p $(LIBWEBP_DIR)/build && cp $(LIBSHARPYUV_ST) $(LIBSHARPYUV)
 	$(MAKE) \
 		$(HELPER_MAKEFLAGS) \
@@ -43,18 +57,14 @@ $(OUT_ENC_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLis
 		OUT_CPP=$< \
 		STACK_SIZE=5242880 \
 		INITIAL_MEMORY_SIZE=268435456 \
-		LIBAOM_FLAGS="\
-			-DCONFIG_AV1_DECODER=0 \
-			-DCONFIG_MULTITHREAD=0 \
-			-DCONFIG_AV1_HIGHBITDEPTH=1 \
-		" \
 		ENVIRONMENT=$(ENVIRONMENT) \
-		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM_DECODE=0 -DAVIF_LOCAL_LIBSHARPYUV=ON" \
+		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM=LOCAL -DAVIF_CODEC_AOM_DECODE=OFF -DAVIF_LIBSHARPYUV=LOCAL -DAVIF_LIBYUV=OFF" \
+		AV1_CODEC_LIBS="$(abspath $(LIBAOM_OUT))" \
 		EXTRA_EM_FLAGS="-s ALLOW_MEMORY_GROWTH=1"
 
 # MT-Encoding
 # We need to run the ST and MT tasks sequentially to avoid conflicts with the copy of libsharpyuv in the build directory
-$(OUT_ENC_MT_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt $(LIBSHARPYUV_MT) | $(OUT_ENC_JS)
+$(OUT_ENC_MT_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_OUT) $(LIBSHARPYUV_MT) | $(OUT_ENC_JS)
 	mkdir -p $(LIBWEBP_DIR)/build && cp $(LIBSHARPYUV_MT) $(LIBSHARPYUV)
 	$(MAKE) \
 		$(HELPER_MAKEFLAGS) \
@@ -62,42 +72,85 @@ $(OUT_ENC_MT_JS): $(OUT_ENC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMake
 		OUT_CPP=$< \
 		STACK_SIZE=5242880 \
 		INITIAL_MEMORY_SIZE=268435456 \
-		LIBAOM_FLAGS="\
-			-DCONFIG_AV1_DECODER=0 \
-			-DCONFIG_AV1_HIGHBITDEPTH=1 \
-		" \
 		ENVIRONMENT=$(ENVIRONMENT) \
-		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM_DECODE=0 -DAVIF_LOCAL_LIBSHARPYUV=ON" \
+		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM=LOCAL -DAVIF_CODEC_AOM_DECODE=OFF -DAVIF_LIBSHARPYUV=LOCAL -DAVIF_LIBYUV=OFF" \
+		AV1_CODEC_LIBS="$(abspath $(LIBAOM_OUT))" \
 		OUT_FLAGS="-pthread" \
 		EXTRA_EM_FLAGS=""
 
-# Decoding
-$(OUT_DEC_JS): $(OUT_DEC_CPP) $(CODEC_DIR)/CMakeLists.txt $(LIBAOM_DIR)/CMakeLists.txt
+# Decoding (uses dav1d instead of libaom for speed)
+$(OUT_DEC_JS): $(OUT_DEC_CPP) $(CODEC_DIR)/CMakeLists.txt $(DAV1D_OUT)
 	$(MAKE) \
 		$(HELPER_MAKEFLAGS) \
 		OUT_JS=$@ \
 		OUT_CPP=$< \
 		STACK_SIZE=5242880 \
 		INITIAL_MEMORY_SIZE=16777216 \
-		LIBAOM_FLAGS="\
-			-DCONFIG_AV1_ENCODER=0 \
-			-DCONFIG_AV1_HIGHBITDEPTH=1 \
-			-DCONFIG_MULTITHREAD=0 \
-		" \
 		ENVIRONMENT=$(ENVIRONMENT) \
-		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM_ENCODE=0"
+		LIBAVIF_FLAGS="-DAVIF_CODEC_AOM=OFF -DAVIF_CODEC_DAV1D=LOCAL -DAVIF_LIBYUV=OFF -DAVIF_LIBSHARPYUV=OFF" \
+		AV1_CODEC_LIBS="$(abspath $(DAV1D_OUT))" \
+		EXTRA_EM_FLAGS="-s ALLOW_MEMORY_GROWTH=1"
 
-# LIBAOM EXTRACTION SECTION
+# LIBAOM BUILD SECTION
+# Build libaom and place at ext/aom/build.libavif/ where LocalAom.cmake expects it
 
 # Download the libaom tarball
 $(LIBAOM_PACKAGE):
 	mkdir -p $(@D)
 	curl -sL $(LIBAOM_URL) -o $@
 
-# Extract libaom from the tarball
-$(LIBAOM_DIR)/CMakeLists.txt: $(LIBAOM_PACKAGE)
+# Extract libaom to libavif/ext/aom
+$(LIBAOM_SRC)/CMakeLists.txt: $(LIBAOM_PACKAGE) $(CODEC_DIR)/CMakeLists.txt
+	mkdir -p $(LIBAOM_SRC)
+	tar xzm -C $(LIBAOM_SRC) -f $(LIBAOM_PACKAGE)
+
+# Build libaom for encoder (placed where LocalAom.cmake expects it)
+$(LIBAOM_OUT): $(LIBAOM_SRC)/CMakeLists.txt
+	emcmake cmake \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DENABLE_CCACHE=0 \
+		-DAOM_TARGET_CPU=generic \
+		-DENABLE_DOCS=0 \
+		-DENABLE_TESTS=0 \
+		-DENABLE_EXAMPLES=0 \
+		-DENABLE_TOOLS=0 \
+		-DCONFIG_ACCOUNTING=0 \
+		-DCONFIG_INSPECTION=0 \
+		-DCONFIG_RUNTIME_CPU_DETECT=0 \
+		-DCONFIG_WEBM_IO=0 \
+		-DCONFIG_AV1_DECODER=0 \
+		-DCONFIG_AV1_HIGHBITDEPTH=1 \
+		-DCMAKE_C_FLAGS="-msimd128" \
+		-DCMAKE_CXX_FLAGS="-msimd128" \
+		-B $(LIBAOM_BUILD) \
+		$(LIBAOM_SRC) && \
+	$(MAKE) -C $(LIBAOM_BUILD)
+
+# DAV1D BUILD SECTION
+# Build dav1d and place at ext/dav1d/build/ where LocalDav1d.cmake expects it
+
+# Download the dav1d tarball
+$(DAV1D_PACKAGE):
 	mkdir -p $(@D)
-	tar xzm -C $(@D) -f $(LIBAOM_PACKAGE)
+	curl -sL $(DAV1D_URL) -o $@
+
+# Extract dav1d to libavif/ext/dav1d
+$(DAV1D_SRC)/meson.build: $(DAV1D_PACKAGE) $(CODEC_DIR)/CMakeLists.txt
+	mkdir -p $(DAV1D_SRC)
+	tar xzm --strip 1 -C $(DAV1D_SRC) -f $(DAV1D_PACKAGE)
+
+# Build dav1d with meson + emscripten cross-compilation
+$(DAV1D_OUT): $(DAV1D_SRC)/meson.build
+	@echo "=== Building dav1d for WASM ==="
+	printf '[binaries]\nc = '"'"'emcc'"'"'\ncpp = '"'"'em++'"'"'\nar = '"'"'emar'"'"'\nstrip = '"'"'emstrip'"'"'\n\n[host_machine]\nsystem = '"'"'emscripten'"'"'\ncpu_family = '"'"'wasm32'"'"'\ncpu = '"'"'wasm32'"'"'\nendian = '"'"'little'"'"'\n\n[built-in options]\nc_args = ['"'"'-msimd128'"'"', '"'"'-flto'"'"']\n' > $(EMSCRIPTEN_CROSS_FILE)
+	meson setup $(DAV1D_BUILD) $(DAV1D_SRC) \
+		--cross-file $(EMSCRIPTEN_CROSS_FILE) \
+		--default-library=static \
+		-Denable_tools=false \
+		-Denable_tests=false \
+		-Denable_asm=false \
+		--buildtype=release
+	ninja -C $(DAV1D_BUILD)
 
 # LIBAVIF EXTRACTION SECTION
 

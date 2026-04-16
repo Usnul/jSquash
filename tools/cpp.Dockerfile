@@ -11,7 +11,8 @@ ARG DEFAULT_EMSCRIPTEN_SETTINGS="\
 -s TEXTDECODER=0 \
 "
 
-RUN apt-get update && apt-get install -qqy autoconf libtool pkg-config
+RUN apt-get update && apt-get install -qqy autoconf libtool pkg-config python3-pip ninja-build
+RUN pip3 install meson
 
 ENV CFLAGS="${DEFAULT_CFLAGS}"
 ENV CXXFLAGS="${CFLAGS} ${DEFAULT_CXX_FLAGS}"
